@@ -1,0 +1,100 @@
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.uix.filechooser import FileChooserListView
+from pydub import AudioSegment
+import pygame
+import os
+
+class AudioSplitter(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(orientation="vertical", **kwargs)
+        self.audio_file = None
+        self.audio = None
+        self.current_splits = [0]
+        self.playing = False
+
+        # File Chooser
+        self.file_chooser = FileChooserListView(filters=["*.mp3", "*.wav"])
+        self.add_widget(self.file_chooser)
+
+        # Buttons
+        self.load_button = Button(text="Load Audio", size_hint_y=None, height=50)
+        self.load_button.bind(on_release=self.load_audio)
+        self.add_widget(self.load_button)
+
+        self.play_button = Button(text="Play", size_hint_y=None, height=50, disabled=True)
+        self.play_button.bind(on_release=self.play_audio)
+        self.add_widget(self.play_button)
+
+        self.split_button = Button(text="Split", size_hint_y=None, height=50, disabled=True)
+        self.split_button.bind(on_release=self.split_audio)
+        self.add_widget(self.split_button)
+
+        self.stop_button = Button(text="Stop", size_hint_y=None, height=50, disabled=True)
+        self.stop_button.bind(on_release=self.stop_audio)
+        self.add_widget(self.stop_button)
+
+        pygame.init()
+
+    def load_audio(self, instance):
+        if self.file_chooser.selection:
+            self.audio_file = self.file_chooser.selection[0]
+            self.audio = AudioSegment.from_file(self.audio_file)
+            self.current_splits = [0]
+
+            self.play_button.disabled = False
+            self.split_button.disabled = False
+            self.stop_button.disabled = False
+
+            print("Audio file loaded successfully!")
+
+    def play_audio(self, instance):
+        if self.audio_file:
+            pygame.mixer.init()
+            pygame.mixer.music.load(self.audio_file)
+            pygame.mixer.music.play()
+            self.playing = True
+
+    def stop_audio(self, instance):
+        pygame.mixer.music.stop()
+        self.playing = False
+
+    def split_audio(self, instance):
+        if not self.audio or not self.playing:
+            return
+
+        current_pos = pygame.mixer.music.get_pos()
+        if current_pos < 0:
+            return
+        current_time = current_pos / 1000
+
+        if current_time > self.current_splits[-1]:
+            self.current_splits.append(current_time)
+            output_folder = os.path.join(os.path.dirname(self.audio_file), "splits")
+            os.makedirs(output_folder, exist_ok=True)
+
+            for i in range(len(self.current_splits) - 1):
+                start = int(self.current_splits[i] * 1000)
+                end = int(self.current_splits[i + 1] * 1000)
+                segment = self.audio[start:end]
+
+                output_path = os.path.join(output_folder, f"split_{i+1}.mp3")
+                segment.export(output_path, format="mp3")
+                print(f"Saved: {output_path}")
+
+            last_start = int(self.current_splits[-1] * 1000)
+            if last_start < len(self.audio):
+                last_segment = self.audio[last_start:]
+                last_output_path = os.path.join(output_folder, f"split_{len(self.current_splits)}.mp3")
+                last_segment.export(last_output_path, format="mp3")
+                print(f"Saved: {last_output_path}")
+
+            print("Audio split successfully!")
+
+class AudioSplitterApp(App):
+    def build(self):
+        return AudioSplitter()
+
+if __name__ == "__main__":
+    AudioSplitterApp().run()
